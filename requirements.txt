@@ -1,0 +1,4 @@
+# KevPriority has no external dependencies.
+# Everything is Python 3.10+ standard library (urllib, json, csv, argparse).
+# This file exists so the project follows the usual convention;
+# `pip install -r requirements.txt` is a harmless no-op.

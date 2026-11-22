@@ -1,0 +1,15 @@
+# Generated reports (created by every run)
+reports/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local config / secrets (never commit these)
+.env
+*.pem
+*.key
+
+# Virtual environments
+.venv/
+venv/
