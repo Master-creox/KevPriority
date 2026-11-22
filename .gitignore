@@ -1,6 +1,14 @@
 # Generated reports (created by every run)
 reports/
 
+# PyInstaller build output (created by build-exe.bat on Windows)
+dist/
+build/
+*.spec
+
+# Watch mode state (local only - the last scan's snapshot, never committed)
+state.json
+
 # Python bytecode
 __pycache__/
 *.py[cod]

@@ -99,6 +99,92 @@ If the EPSS API cannot be reached, the tool warns you and still ranks by
 KEV due date alone. If the KEV feed cannot be reached, it stops and tells
 you to check your connection or use `--demo`.
 
+## Watch mode (running system)
+
+A one-shot run answers "what should I patch first, right now?". Watch
+mode answers the next question: **"what is NEW since I last looked?"**
+Start it once, leave it running, and every cycle it scans the live feeds
+again and reports **only what changed** — nothing new means a quiet cycle.
+
+```bash
+# Start watching: scan every 6 hours, report only changes
+python kevpriority.py --watch
+
+# Scan once a day instead
+python kevpriority.py --watch --interval-hours 24
+
+# Windows: double-click run-watch.bat (same thing, no typing)
+```
+
+What counts as a change (compared with the last successful run):
+
+| Change | Meaning |
+| --- | --- |
+| NEW IN KEV | A CVE appeared in the CISA KEV list (confirmed exploited) |
+| MOVED TO ACT NOW | A CVE's band moved up into ACT NOW |
+| EPSS JUMP | A CVE's EPSS score rose by 0.20 or more |
+| DUE DATE CHANGED | A CVE's CISA due date changed |
+
+Each cycle writes into `reports/`:
+
+- `changes-YYYYMMDD-HHMMSS.txt` — human-readable "what changed" report
+- `changes-YYYYMMDD-HHMMSS.json` — the same changes as JSON
+- `watch.log` — one short line per cycle (audit trail)
+
+The first run only saves the baseline (`state.json`, next to
+`kevpriority.py`) and reports nothing as new — otherwise every CVE
+would look "new" on day one. `state.json` is local only and gitignored;
+deleting it just re-baselines the next run. A failed cycle (no internet,
+feed down) leaves the state untouched, logs the failure, and retries
+next cycle — a failed scan can never make real changes look like
+"nothing changed".
+
+**Auto-start on Windows:** use Task Scheduler to run `run-watch.bat` at
+logon (or daily). Exact steps are in `SCHEDULER.md` — about 2 minutes,
+no admin service. To stop watching, close the console window (or End the
+task in Task Scheduler).
+
+## Desktop app
+
+If you would rather not open PowerShell to check results, run the desktop
+app instead — a plain window with buttons. Tkinter ships with Python, so
+nothing extra is needed.
+
+```bash
+python app.py
+```
+
+- **Scan Now** — runs the live scan and shows the top 20 in a table
+  (Rank, Score, Band, CVE, KEV, EPSS, Due date). Click a row to see why
+  that CVE ranks there. The status bar shows the last scan time, the
+  source (live or demo), and how many CVEs were ranked.
+- **Demo** — tick the checkbox to scan the bundled sample data instead of
+  the live feeds (no internet needed).
+- **Start Watch** — keeps scanning in the background every N hours
+  (default 6, change the number next to the button) and lists only what
+  changed since the last scan in the "New since last scan" panel: new
+  CVEs in the top 20, CVEs that moved into ACT NOW, and EPSS jumps of
+  0.20 or more. Click it again (Stop Watch) to stop. The in-app Watch
+  compares scans within the session; the file-based Watch mode above
+  (state.json) is the one that remembers across restarts. The app uses
+  the exact same scan and ranking code as the command-line tool, so the
+  two can never disagree.
+- **Open Reports** — opens the `reports/` folder with the text + JSON
+  reports from the latest scan.
+
+### Build a Windows .exe
+
+The app can also be a double-clickable `.exe` (no Python install needed
+to run it). A Windows `.exe` can only be built on Windows, so this step
+runs on your laptop, not here:
+
+```bat
+build-exe.bat
+```
+
+That installs PyInstaller (once) and builds `dist\KevPriority.exe`.
+Double-click it to open the app.
+
 ## Data sources (both free and public)
 
 | Source | What it is | URL |
@@ -116,15 +202,23 @@ never use them.
 ```text
 KevPriority/
 ├── kevpriority.py   # CLI entry point (argparse, orchestration)
+├── app.py           # desktop app (Tkinter window, same scan logic)
+├── build-exe.bat    # build a Windows .exe with PyInstaller (on Windows)
 ├── kev.py           # CISA KEV catalog: download + parse
 ├── epss.py          # EPSS API + local EPSS files (JSON/CSV)
 ├── ranking.py       # priority score, bands, reasons
 ├── report.py        # plain-text + JSON report writers
+├── watch.py         # watch mode: state, diff, change reports, loop
+├── run-watch.bat    # Windows: double-click to start watch mode
+├── SCHEDULER.md     # Windows Task Scheduler auto-start steps
+├── state.json       # watch baseline (local only, gitignored, created on first watch run)
 ├── data/
 │   ├── sample_kev.json    # demo sample (NOT live data)
 │   └── sample_epss.json   # demo sample (illustrative EPSS values)
 ├── tests/
-│   └── test_kevpriority.py  # stdlib unittest, no pytest needed
+│   ├── test_kevpriority.py  # stdlib unittest, no pytest needed
+│   ├── test_watch.py        # watch mode: diff, baseline, cycles, failures
+│   └── test_app.py          # app scan + diff logic (no display needed)
 ├── requirements.txt  # empty on purpose: stdlib only
 ├── LICENSE           # MIT
 └── README.md
@@ -138,7 +232,9 @@ python -m unittest discover -s tests -v
 
 The suite covers ranking order (KEV beats non-KEV, higher EPSS ranks
 higher, overdue beats due-later), score boundaries, KEV/EPSS parsing,
-report generation, and the full demo run.
+report generation, the full demo run, and watch mode (new KEV entries,
+EPSS jumps, no-change cycles, baseline first run, failed scans keeping
+the old state).
 
 ## Honest limits
 

@@ -7,11 +7,19 @@ Usage:
     python kevpriority.py --top 10         # show only the top 10
     python kevpriority.py --kev-file data/sample_kev.json --epss-file data/sample_epss.json
     python kevpriority.py --output-dir my_reports
+    python kevpriority.py --watch          # watch mode: scan every 6 hours,
+                                           # report only what changed
+    python kevpriority.py --watch --interval-hours 24
 
 What it does, in one line: it downloads the public CISA KEV catalog
 (confirmed-exploited vulnerabilities) and free EPSS scores (probability of
 exploitation in the next 30 days), then ranks CVEs so the ones attackers
 are already using come first.
+
+Watch mode runs that same scan on a loop and reports only what changed
+since the last successful run (new KEV entries, band moves to ACT NOW,
+EPSS jumps of +0.20 or more, due-date changes). Start it once and leave
+it running; see watch.py, run-watch.bat and SCHEDULER.md.
 
 No API keys, no accounts, no paid services. Python 3.10+ and the standard
 library only - nothing to install.
@@ -25,6 +33,7 @@ from epss import fetch_epss_scores, load_epss_file
 from kev import fetch_kev_catalog, load_kev_file, parse_kev_catalog
 from ranking import rank_items
 from report import write_reports
+from watch import STATE_FILENAME, watch_loop
 
 # Sample files bundled with the project so --demo works with no internet.
 BASE_DIR = Path(__file__).resolve().parent
@@ -63,6 +72,26 @@ def build_parser():
         "--output-dir",
         default="reports",
         help="Where to write the text + JSON reports (default: reports).",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch mode: scan on a loop and report only what changed "
+        "since the last successful run. Start it once and leave it "
+        "running (see run-watch.bat and SCHEDULER.md).",
+    )
+    parser.add_argument(
+        "--interval-hours",
+        type=float,
+        default=6.0,
+        help="Hours to wait between watch cycles (default: 6).",
+    )
+    parser.add_argument(
+        "--max-cycles",
+        type=int,
+        default=0,
+        help="Stop after this many watch cycles (0 = run forever). "
+        "Mainly for testing.",
     )
     return parser
 
@@ -127,6 +156,34 @@ def run(argv=None):
     if args.top < 1:
         print("ERROR: --top must be at least 1.", file=sys.stderr)
         return 2
+
+    if args.watch:
+        # Watch mode: same full scan as the one-shot run, on a loop,
+        # reporting only what changed. --top has no meaning here because
+        # the state tracks every CVE, not just the top N.
+        if args.interval_hours <= 0:
+            print("ERROR: --interval-hours must be greater than 0.",
+                  file=sys.stderr)
+            return 2
+        if args.max_cycles < 0:
+            print("ERROR: --max-cycles must be 0 or greater.",
+                  file=sys.stderr)
+            return 2
+
+        def scan():
+            """One full scan: load inputs, rank every CVE we know about."""
+            kev_entries, epss_scores, source_label = load_inputs(args)
+            cve_ids = sorted(set(kev_entries) | set(epss_scores))
+            ranked = rank_items(cve_ids, kev_entries, epss_scores)
+            return ranked, source_label, len(kev_entries), len(epss_scores)
+
+        return watch_loop(
+            scan,
+            BASE_DIR / STATE_FILENAME,
+            Path(args.output_dir),
+            args.interval_hours,
+            max_cycles=args.max_cycles,
+        )
 
     kev_entries, epss_scores, source_label = load_inputs(args)
 
